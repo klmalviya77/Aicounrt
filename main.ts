@@ -1295,20 +1295,25 @@ async function showResidentClaimPage(slug: string) {
         return;
       }
       
-      // 🚀 ORIGINAL FAST2SMS OTP LOGIC RESTORED HERE
+      // 🚀 UPDATED LOGIC: SUPABASE EDGE FUNCTION KE THROUGH OTP SEND KARNA
       const otp = Math.floor(1000 + Math.random() * 9000).toString();
+      
       try {
-        if (FAST2SMS_API_KEY && FAST2SMS_API_KEY !== "YOUR_FAST2SMS_API_KEY_HERE") {
-          await fetch(`https://corsproxy.io/?https://www.fast2sms.com/dev/bulkV2`, {
-            method: 'POST',
-            headers: { 'authorization': FAST2SMS_API_KEY, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ route: "otp", variables_values: otp, numbers: residentMobile })
-          });
-        } else {
-          console.log("No API Key. Simulated OTP is: ", otp);
-          showToast(`Simulated OTP: ${otp}`, "success");
+        // Naya tareeka: Supabase ke edge function ko call lagao
+        const { data, error } = await client.functions.invoke('send-otp', {
+          body: { mobile: residentMobile, otp: otp }
+        });
+
+        if (error) {
+           throw new Error("Edge Function Error");
         }
-      } catch (err) { console.error("Fast2SMS Error:", err); }
+        
+        console.log("OTP Sent Successfully via Supabase!");
+      } catch (err) { 
+        console.error("Fast2SMS/Supabase Error:", err);
+        // Agar net slow ho ya SMS API fail ho, toh backup mein screen pe OTP dikha dega
+        showToast(`Simulated OTP: ${otp}`, "success"); 
+      }
       
       const otpModal = document.createElement("div");
       otpModal.className = "fixed inset-0 bg-slate-900/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm transition-all";
@@ -1388,6 +1393,7 @@ async function showResidentClaimPage(slug: string) {
     });
   }
 }
+
 
 // ==========================================
 // RESIDENT DASHBOARD FLOW (WITH PBAC)
