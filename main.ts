@@ -182,7 +182,6 @@ async function showDashboardPage() {
     const towerSet = new Set<string>();
     if (allFlats) allFlats.forEach((f: any) => towerSet.add(f.flat_number.split("-")[0] || "1"));
 
-    // Code deployment ke hisaab se dynamically URL set karega (localhost ko apne aap hta kar netlify link set kar lega)
     const baseUrl = window.location.origin + window.location.pathname;
     const guardLink = `${baseUrl}?guard=${society.qr_slug}`; 
     const claimLink = `${baseUrl}?claim=${society.qr_slug}`; 
@@ -929,8 +928,11 @@ async function showGuardConsole(slug: string) {
     `;
 
     document.getElementById("verifyGuardSetupBtn")?.addEventListener("click", async () => {
-      const code = (document.getElementById("guardSetupInput") as HTMLInputElement).value;
-      if (code === society.guard_pin) { 
+      const inputEl = document.getElementById("guardSetupInput") as HTMLInputElement;
+      const code = inputEl.value.trim();
+      const dbPin = String(society.guard_pin || "").trim();
+
+      if (code === dbPin) { 
         const newToken = "guard_auth_" + Math.random().toString(36).substr(2);
         
         // 🚀 SAVE DEVICE TOKEN TO OVERRIDE OLD ONES
@@ -942,7 +944,7 @@ async function showGuardConsole(slug: string) {
         showGuardConsole(slug); 
       } else {
         showToast("Invalid Setup PIN. Try again.", "error");
-        (document.getElementById("guardSetupInput") as HTMLInputElement).value = "";
+        inputEl.value = "";
       }
     });
     return;
@@ -1218,7 +1220,7 @@ async function showResidentClaimPage(slug: string) {
     if (titleEl) titleEl.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation"></i> Invalid Link</span>`;
     return;
   }
-
+  
   if (!hasFeatureAccess(society.plan_type, 'resident_management')) {
     document.body.innerHTML = `
       <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -1231,12 +1233,13 @@ async function showResidentClaimPage(slug: string) {
     `;
     return;
   }
-
+  
   if (titleEl) titleEl.innerText = society.name;
   
   const { data: flats } = await client.from("flats").select("*").eq("society_id", society.id).order("flat_number");
   const groupedFlats: {
-    [key: string]: any[] } = {};
+    [key: string]: any[]
+  } = {};
   
   if (flats) {
     flats.forEach((flat: any) => {
@@ -1292,6 +1295,7 @@ async function showResidentClaimPage(slug: string) {
         return;
       }
       
+      // 🚀 ORIGINAL FAST2SMS OTP LOGIC RESTORED HERE
       const otp = Math.floor(1000 + Math.random() * 9000).toString();
       try {
         if (FAST2SMS_API_KEY && FAST2SMS_API_KEY !== "YOUR_FAST2SMS_API_KEY_HERE") {
@@ -1302,7 +1306,7 @@ async function showResidentClaimPage(slug: string) {
           });
         } else {
           console.log("No API Key. Simulated OTP is: ", otp);
-          showToast(`Simulated OTP: ${otp}`, "success"); 
+          showToast(`Simulated OTP: ${otp}`, "success");
         }
       } catch (err) { console.error("Fast2SMS Error:", err); }
       
@@ -1330,7 +1334,7 @@ async function showResidentClaimPage(slug: string) {
       
       document.getElementById("verifyClaimOtpBtn")?.addEventListener("click", async () => {
         const enteredOtp = (document.getElementById("claimOtpInput") as HTMLInputElement).value;
-        if (enteredOtp !== otp && enteredOtp !== "0000") { 
+        if (enteredOtp !== otp && enteredOtp !== "0000") {
           return showToast("Incorrect OTP!", "error");
         }
         
