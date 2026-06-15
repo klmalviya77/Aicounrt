@@ -5,17 +5,14 @@ import { SocietyDashboardPage } from './pages/SocietyDashboardPage';
 import { AddFlatsPage } from './pages/AddFlatsPage';
 import { VisitorRecordsPage } from './pages/VisitorRecordsPage';
 import { ManageResidentsPage } from './pages/ManageResidentsPage';
-import { GuardConsolePage } from './pages/GuardConsolePage';
-import { ResidentClaimPage } from './pages/ResidentClaimPage';
-import { ResidentDashboardPage } from './pages/ResidentDashboardPage';
 import { VisitorEntryPage } from './pages/VisitorEntryPage';
 import { StaffAttendancePage } from './pages/StaffAttendancePage';
 import { PrivacyPolicyPage } from './pages/PrivacyPolicyPage';
 import { TermsPage } from './pages/TermsPage';
 import { RefundPolicyPage } from './pages/RefundPolicyPage';
+import { ManageStaffPage } from './pages/ManageStaffPage';
 
 import { SupabaseService } from './services/SupabaseService';
-const FAST2SMS_API_KEY = "dT2pobqhCEfKvLn4F951kDBIlrcyueO6xQSgR7VAsM8mwtNajJzNAejqFHyYfCBirpsvla59dk3oLw87";
 
 // ==========================================
 // PLAN-BASED ACCESS CONTROL SYSTEM
@@ -91,7 +88,10 @@ function showEnrollPage() {
       const { error } = await client.from("enrollments").insert({ contact_name: contactName, society_name: societyName, phone: phone, email: email, flat_count_estimate: flatCount });
       if (error) throw new Error(error.message);
       showToast("Request Sent Successfully!", "success"); showHomePage();
-    } catch (err: any) { showToast(err.message, "error"); btn.innerHTML = `Submit Request <i class="fa-solid fa-paper-plane"></i>`; btn.disabled = false; }
+    } catch (err: any) { 
+      showToast(err.message, "error");
+      btn.innerHTML = `Submit Request <i class="fa-solid fa-paper-plane"></i>`; btn.disabled = false; 
+    }
   });
 }
 
@@ -111,8 +111,11 @@ function showLoginPage() {
       const client = SupabaseService.getClient();
       const { error } = await client.auth.signInWithPassword({ email, password });
       if (error) throw new Error(error.message);
+    
       showToast("Login Successful!", "success"); showDashboardPage();
-    } catch (err: any) { showToast(err.message, "error"); btn.innerHTML = `Sign In <i class="fa-solid fa-arrow-right-to-bracket"></i>`; btn.disabled = false; }
+    } catch (err: any) { 
+      showToast(err.message, "error"); btn.innerHTML = `Sign In <i class="fa-solid fa-arrow-right-to-bracket"></i>`; btn.disabled = false; 
+    }
   });
 
   const toggleBtn = document.getElementById("togglePasswordBtn");
@@ -150,8 +153,8 @@ function showRefundPolicyPage() {
 async function showDashboardPage() {
   const page = new SocietyDashboardPage();
   document.body.innerHTML = page.render();
-  
   const client = SupabaseService.getClient();
+  
   document.getElementById("logoutBtn")?.addEventListener("click", async () => {
     await client.auth.signOut();
     showToast("Logged out safely", "success");
@@ -163,28 +166,33 @@ async function showDashboardPage() {
     if (!userData?.user) return showLoginPage();
 
     let { data: society, error: societyError } = await client.from("societies").select("*").eq("user_id", userData.user.id).single();
-
+    
     if (!society) {
        const tempSlug = "gate-" + Math.floor(Math.random() * 1000000);
        const { data: newSociety, error: insertError } = await client.from("societies").insert({
          user_id: userData.user.id, name: "My Demo Society", address: "Setup Pending", qr_slug: tempSlug, is_active: true
        }).select().single();
+       
        if (insertError) throw new Error("Could not create backend society profile.");
        society = newSociety;
     }
 
-    if (society.is_active === false) { document.body.innerHTML = `<div class="p-10 text-center"><h2>Account Inactive</h2></div>`; return; }
+    if (society.is_active === false) { 
+      document.body.innerHTML = `<div class="p-10 text-center"><h2>Account Inactive</h2></div>`; return;
+    }
 
     const { count: flatsCount } = await client.from("flats").select("*", { count: 'exact', head: true }).eq("society_id", society.id);
     const { count: visitorsCount } = await client.from("visitors").select("*", { count: 'exact', head: true }).eq("society_id", society.id);
-    
     const { data: allFlats } = await client.from("flats").select("flat_number").eq("society_id", society.id);
     const towerSet = new Set<string>();
+    
     if (allFlats) allFlats.forEach((f: any) => towerSet.add(f.flat_number.split("-")[0] || "1"));
 
+    // 🚀 Update these links to point to your new separate apps
     const baseUrl = window.location.origin + window.location.pathname;
-    const guardLink = `${baseUrl}?guard=${society.qr_slug}`; 
-    const claimLink = `${baseUrl}?claim=${society.qr_slug}`; 
+    const guardLink = `https://your-guard-website.com`; // Change this to your Guard App URL
+    const claimLink = `https://your-resident-website.com/?claim=${society.claim_token}`; // Change this to your Resident App URL
+    
     const qrEntryLink = `${baseUrl}?entry=${society.qr_slug}`;
     const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(qrEntryLink)}&margin=10`;
     
@@ -306,7 +314,7 @@ async function showDashboardPage() {
         img.src = qrImageUrl;
       });
 
-      document.getElementById("copyGuardLinkBtn")?.addEventListener("click", () => { navigator.clipboard.writeText(guardLink); showToast("Guard Link Copied!", "success"); });
+      document.getElementById("copyGuardLinkBtn")?.addEventListener("click", () => { navigator.clipboard.writeText(guardLink); showToast("Guard App URL Copied!", "success"); });
       document.getElementById("copyClaimLinkBtn")?.addEventListener("click", () => { navigator.clipboard.writeText(claimLink); showToast("Resident Link Copied!", "success"); });
 
       // ==========================================
@@ -815,7 +823,7 @@ async function showVisitorRecordsPage(societyId: string) {
           const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
           const url = URL.createObjectURL(blob);
           const link = document.createElement("a"); 
-          link.setAttribute("href", url); 
+          link.setAttribute("href", url);
           link.setAttribute("download", `GateGuard_Logs_${new Date().toISOString().split('T')[0]}.csv`);
           document.body.appendChild(link); link.click();
           document.body.removeChild(link);
@@ -831,7 +839,7 @@ async function showVisitorRecordsPage(societyId: string) {
   function renderTable(dataToRender: any[]) {
     currentDisplayData = dataToRender;
     if (dataToRender.length === 0) { 
-      container!.innerHTML = `<div class="text-center py-16"><div class="text-4xl mb-3 opacity-30 text-slate-400"><i class="fa-solid fa-folder-open"></i></div><h3 class="text-sm font-bold text-slate-500">No visitor records found</h3></div>`; 
+      container!.innerHTML = `<div class="text-center py-16"><div class="text-4xl mb-3 opacity-30 text-slate-400"><i class="fa-solid fa-folder-open"></i></div><h3 class="text-sm font-bold text-slate-500">No visitor records found</h3></div>`;
       return;
     }
     
@@ -880,7 +888,7 @@ async function showVisitorRecordsPage(societyId: string) {
             <div class="font-bold text-sm text-slate-800">${timeStr}</div>
             <div class="text-[11px] text-slate-500 font-medium">${dateStr}</div>
           </td>
-        </tr>
+         </tr>
       `;
     });
     html += `</tbody></table></div>`; 
@@ -908,623 +916,6 @@ async function showVisitorRecordsPage(societyId: string) {
 }
 
 // ==========================================
-// GUARD CONSOLE FLOW (WITH MULTIPLE DEVICE LIMIT)
-// ==========================================
-async function showGuardConsole(slug: string) {
-  const client = SupabaseService.getClient();
-  if (!client) return showToast("Database Connection Error", "error");
-
-  const { data: society, error: societyError } = await client.from("societies").select("*").eq("qr_slug", slug).single();
-  
-  if (societyError || !society) {
-    document.body.innerHTML = `
-      <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-        <div class="bg-slate-800 p-8 rounded-2xl border border-red-500/30 text-center">
-          <div class="text-4xl text-red-500 mb-4"><i class="fa-solid fa-triangle-exclamation"></i></div>
-          <h1 class="text-red-500 font-bold text-xl">Invalid Guard Link</h1>
-          <p class="text-slate-400 text-sm mt-2">Contact society admin for correct URL.</p>
-        </div>
-      </div>`;
-    return;
-  }
-
-  const deviceToken = localStorage.getItem(`guard_token_${society.id}`);
-  
-  // 🚀 MULTIPLE TABLET LIMIT CHECK
-  const plan = society.plan_type || 'Starter';
-  const isMultiAllowed = (plan === 'Enterprise' || plan === 'Custom');
-  
-  if (deviceToken && !isMultiAllowed && society.guard_device_token && society.guard_device_token !== deviceToken) {
-     localStorage.removeItem(`guard_token_${society.id}`);
-     showToast("Another Guard Tablet was signed in! Upgrade to Enterprise for multiple tablets.", "error");
-     setTimeout(() => window.location.reload(), 2500);
-     return;
-  }
-  
-  if (!deviceToken) {
-    document.body.innerHTML = `
-      <div class="min-h-screen bg-slate-900 flex items-center justify-center p-4 font-sans relative overflow-hidden">
-        <div class="absolute top-0 right-0 p-8 opacity-5 text-9xl"><i class="fa-solid fa-lock"></i></div>
-        <div class="bg-slate-800 rounded-3xl p-8 max-w-sm w-full text-center shadow-2xl border border-slate-700 relative z-10">
-          <div class="w-16 h-16 bg-slate-900 text-indigo-400 rounded-full flex items-center justify-center text-2xl mx-auto mb-4 border border-slate-700 shadow-inner">
-            <i class="fa-solid fa-shield-halved"></i>
-          </div>
-          <h2 class="text-2xl font-black text-white mb-2">Device Locked</h2>
-          <p class="text-xs font-medium text-slate-400 mb-6">Enter the 6-Digit Device Setup PIN provided by admin.</p>
-          
-          <input id="guardSetupInput" type="password" maxlength="6" placeholder="••••••" class="w-full text-center tracking-[0.5em] font-black text-3xl px-4 py-4 rounded-xl border border-slate-600 bg-slate-900 text-white mb-6 outline-none focus:border-indigo-500 transition-all">
-          
-          <button id="verifyGuardSetupBtn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white py-3.5 rounded-xl font-bold shadow-lg transition-all outline-none">
-            Authorize Device
-          </button>
-        </div>
-      </div>
-    `;
-
-    document.getElementById("verifyGuardSetupBtn")?.addEventListener("click", async () => {
-      const inputEl = document.getElementById("guardSetupInput") as HTMLInputElement;
-      const code = inputEl.value.trim();
-      const dbPin = String(society.guard_pin || "").trim();
-
-      if (code === dbPin) { 
-        const newToken = "guard_auth_" + Math.random().toString(36).substr(2);
-        
-        // 🚀 SAVE DEVICE TOKEN TO OVERRIDE OLD ONES
-        if (!isMultiAllowed) {
-          await client.from("societies").update({ guard_device_token: newToken }).eq("id", society.id);
-        }
-        
-        localStorage.setItem(`guard_token_${society.id}`, newToken);
-        showGuardConsole(slug); 
-      } else {
-        showToast("Invalid Setup PIN. Try again.", "error");
-        inputEl.value = "";
-      }
-    });
-    return;
-  }
-
-  const page = new GuardConsolePage();
-  document.body.innerHTML = page.render();
-  
-  setInterval(() => { 
-    const clock = document.getElementById("clockDisplay"); 
-    if (clock) clock.innerText = new Date().toLocaleTimeString('en-US', { hour12: false }); 
-  }, 1000);
-  
-  const titleEl = document.getElementById("societyNameTitle");
-  if (titleEl) titleEl.innerText = society.name;
-
-  const towerSelect = document.getElementById("guardTowerSelect") as HTMLSelectElement;
-  const flatSelect = document.getElementById("guardFlatSelect") as HTMLSelectElement;
-  
-  const { data: flats } = await client.from("flats").select("*").eq("society_id", society.id).order("flat_number");
-  const groupedFlats: { [key: string]: any[] } = {};
-  
-  if (flats) {
-    flats.forEach((flat: any) => {
-      const parts = flat.flat_number.split("-"); 
-      const tower = parts.length > 1 ? parts[0].trim() : "Ind";
-      if (!groupedFlats[tower]) groupedFlats[tower] = []; 
-      groupedFlats[tower].push(flat);
-    });
-    
-    let towerHtml = `<option value="">Select Tower</option>`; 
-    for (const tower in groupedFlats) towerHtml += `<option value="${tower}">${tower}</option>`;
-    if (towerSelect) towerSelect.innerHTML = towerHtml;
-    
-    towerSelect.addEventListener("change", () => {
-      const selected = towerSelect.value;
-      if (selected && groupedFlats[selected]) {
-        flatSelect.disabled = false; 
-        flatSelect.className = "w-full px-4 py-3 rounded-xl bg-slate-900 border border-slate-600 text-white outline-none text-sm cursor-pointer transition-all";
-        let flatHtml = `<option value="">Select Flat</option>`;
-        groupedFlats[selected].forEach((flat: any) => {
-          const flatOnly = flat.flat_number.includes("-") ? flat.flat_number.split("-")[1] : flat.flat_number;
-          flatHtml += `<option value="${flat.id}" data-fullname="${flat.flat_number}">${flatOnly}</option>`;
-        });
-        flatSelect.innerHTML = flatHtml;
-      } else { 
-        flatSelect.disabled = true; 
-        flatSelect.className = "w-full px-4 py-3 rounded-xl bg-slate-800 border border-slate-700 text-slate-500 cursor-not-allowed outline-none text-sm transition-all"; 
-        flatSelect.innerHTML = `<option value="">Select Tower 1st</option>`;
-      }
-    });
-  }
-
-  const loadGuardRecords = async () => {
-    const today = new Date(); today.setHours(0, 0, 0, 0);
-    const { data: records } = await client.from("visitors").select("*").eq("society_id", society.id).gte("created_at", today.toISOString()).order("created_at", { ascending: false });
-    
-    const container = document.getElementById("guardRecordsContainer"); 
-    if (!container) return;
-    
-    if (!records || records.length === 0) { 
-      container.innerHTML = `<div class="text-center text-slate-500 py-10 text-sm font-medium">No entries recorded today.</div>`; 
-      return; 
-    }
-    
-    let html = "";
-    records.forEach(v => {
-      const timeStr = new Date(v.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      let icon = "fa-user";
-      if (v.purpose === "Delivery") icon = "fa-box";
-      if (v.purpose === "Cab") icon = "fa-taxi";
-      
-      html += `
-        <div class="bg-slate-900/50 p-3.5 rounded-2xl flex justify-between items-center border border-slate-700/50 mb-2 hover:border-slate-600 transition-colors">
-          <div class="flex items-center gap-3">
-            <div class="w-10 h-10 bg-indigo-500/10 text-indigo-400 rounded-xl flex items-center justify-center font-bold text-xs border border-indigo-500/20 shrink-0">
-              ${v.flat_number || `<i class="fa-solid ${icon}"></i>`}
-            </div>
-            <div>
-              <div class="font-bold text-white text-sm">${v.name}</div>
-              <div class="text-slate-400 text-[11px] font-medium uppercase tracking-wider">${v.purpose} • ${v.mobile}</div>
-            </div>
-          </div>
-          <div class="text-right text-slate-500 text-[11px] font-bold shrink-0">${timeStr}</div>
-        </div>
-      `;
-    });
-    container.innerHTML = html;
-  };
-  loadGuardRecords(); 
-
-  const submitBtn = document.getElementById("guardSubmitBtn") as HTMLButtonElement;
-  if (submitBtn) {
-    submitBtn.addEventListener("click", async () => {
-      const flatId = flatSelect.value;
-      const name = (document.getElementById("guardVisitorName") as HTMLInputElement).value.trim();
-      const mobile = (document.getElementById("guardVisitorMobile") as HTMLInputElement).value.trim();
-      const purpose = (document.getElementById("guardVisitorPurpose") as HTMLSelectElement).value;
-
-      if (!towerSelect.value || !flatId || !name || !mobile) return showToast("Fill all details", "error");
-      
-      submitBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Processing...`; 
-      submitBtn.disabled = true;
-
-      const flatText = flatSelect.options[flatSelect.selectedIndex].getAttribute("data-fullname") || "";
-      const { error } = await client.from("visitors").insert({ 
-        society_id: society.id, flat_id: flatId, flat_number: flatText, name, mobile, purpose 
-      });
-      
-      if (error) { 
-        showToast(error.message, "error"); 
-        submitBtn.innerHTML = `<i class="fa-solid fa-check"></i> ALLOW ENTRY`; 
-        submitBtn.disabled = false; 
-        return; 
-      }
-      
-      (document.getElementById("guardVisitorName") as HTMLInputElement).value = ""; 
-      (document.getElementById("guardVisitorMobile") as HTMLInputElement).value = "";
-      
-      submitBtn.classList.replace("bg-emerald-600", "bg-indigo-600");
-      submitBtn.innerHTML = `<i class="fa-solid fa-check-double"></i> SUCCESS`; 
-      
-      setTimeout(() => { 
-        submitBtn.classList.replace("bg-indigo-600", "bg-emerald-600");
-        submitBtn.innerHTML = `<i class="fa-solid fa-check"></i> ALLOW ENTRY`; 
-        submitBtn.disabled = false; 
-      }, 2000);
-      
-      loadGuardRecords(); 
-    });
-  }
-
-  document.getElementById("verifyVvipBtn")?.addEventListener("click", async () => {
-    if (!hasFeatureAccess(society.plan_type, 'vvip_pass')) {
-      return showToast("VVIP feature locked! Upgrade plan to access.", "error");
-    }
-
-    const code = (document.getElementById("vvipInputCode") as HTMLInputElement).value.trim().toUpperCase();
-    if (code.length !== 6) return showToast("Enter valid 6-digit code!", "error");
-    
-    const btn = document.getElementById("verifyVvipBtn") as HTMLButtonElement; 
-    btn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i>`; btn.disabled = true;
-
-    const { data: invite, error } = await client.from("guest_invites").select("*, flat:flats(flat_number)").eq("invite_code", code).eq("society_id", society.id).single();
-    
-    if (error || !invite) { showToast("Invalid Code!", "error"); btn.innerText = "Verify"; btn.disabled = false; return; }
-    if (invite.is_used) { showToast("Code already used!", "error"); btn.innerText = "Verify"; btn.disabled = false; return; }
-    
-    const today = new Date().toISOString().split('T')[0];
-    if (invite.valid_date !== today) { showToast(`Valid only for ${invite.valid_date}`, "error"); btn.innerText = "Verify"; btn.disabled = false; return; }
-
-    await client.from("guest_invites").update({ is_used: true }).eq("id", invite.id);
-    await client.from("visitors").insert({ society_id: society.id, flat_id: invite.flat_id, flat_number: invite.flat.flat_number, name: invite.guest_name, mobile: "VVIP Pass", purpose: "Guest", vehicle_number: null });
-
-    (document.getElementById("vvipInputCode") as HTMLInputElement).value = ""; 
-    btn.innerHTML = `<i class="fa-solid fa-check"></i>`; btn.classList.replace("bg-indigo-600", "bg-emerald-500");
-    
-    setTimeout(() => { btn.innerText = "Verify"; btn.classList.replace("bg-emerald-500", "bg-indigo-600"); btn.disabled = false; }, 2000); 
-    loadGuardRecords();
-  });
-
-  const openScannerBtn = document.getElementById("openScannerBtn");
-  const closeScannerBtn = document.getElementById("closeScannerBtn");
-  const scannerModal = document.getElementById("scannerModal");
-  let html5QrcodeScanner: any = null;
-
-  if (openScannerBtn && scannerModal && closeScannerBtn) {
-    openScannerBtn.addEventListener("click", () => {
-      if (!hasFeatureAccess(society.plan_type, 'staff_management')) {
-        return showToast("Staff Module locked! Upgrade plan to access.", "error");
-      }
-
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-         showToast("Browser blocking camera access. Use Chrome/Safari.", "error");
-         return;
-      }
-
-      scannerModal.classList.remove("hidden");
-      scannerModal.classList.add("flex");
-      
-      const startScanner = () => {
-        try {
-          if (!html5QrcodeScanner) {
-            html5QrcodeScanner = new (window as any).Html5QrcodeScanner(
-              "qr-reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false
-            );
-          }
-          
-          html5QrcodeScanner.render(async (decodedText: string) => {
-            html5QrcodeScanner.clear();
-            scannerModal.classList.add("hidden");
-            scannerModal.classList.remove("flex");
-            
-            showToast("Scanned: Processing...", "success");
-            
-            if (decodedText.startsWith("staff-")) {
-              const { data: staffData } = await client.from("staff").select("*").eq("qr_slug", decodedText).single();
-              
-              if (staffData && staffData.is_active) {
-                 const todayDate = new Date().toISOString().split('T')[0];
-                 const { data: openLog } = await client.from("staff_attendance")
-                   .select("*").eq("staff_id", staffData.id).eq("date", todayDate).is("time_out", null).single();
-
-                 if (openLog) {
-                   await client.from("staff_attendance").update({ time_out: new Date().toISOString() }).eq("id", openLog.id);
-                   showToast(`OUT Logged: ${staffData.name}`, "success");
-                 } else {
-                   await client.from("staff_attendance").insert({
-                     staff_id: staffData.id, society_id: society.id, date: todayDate, time_in: new Date().toISOString()
-                   });
-                   showToast(`IN Logged: ${staffData.name}`, "success");
-                 }
-              } else {
-                 showToast("Invalid or Inactive Staff ID", "error");
-              }
-            } 
-            else if (decodedText.startsWith("http")) {
-               showToast("Wrong QR! This is an App Link, not an Entry Pass.", "error");
-            } else {
-               showToast("Unrecognized QR Code Format", "error");
-            }
-          }, (errorMessage: string) => {
-             if(errorMessage.includes("NotAllowedError") || errorMessage.includes("Permission denied")) {
-                 html5QrcodeScanner.clear();
-                 scannerModal.classList.add("hidden");
-                 scannerModal.classList.remove("flex");
-                 showToast("Camera Permission Denied! Allow access.", "error");
-             }
-          });
-        } catch (err) {
-          showToast("Camera initialization failed.", "error");
-        }
-      };
-
-      if (!(window as any).Html5QrcodeScanner) {
-        showToast("Starting Camera Module...", "success");
-        const script = document.createElement("script");
-        script.src = "https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js";
-        script.onload = () => startScanner();
-        script.onerror = () => showToast("Failed to load scanner library.", "error");
-        document.head.appendChild(script);
-      } else {
-        startScanner();
-      }
-    });
-
-    closeScannerBtn.addEventListener("click", () => {
-       if (html5QrcodeScanner) html5QrcodeScanner.clear();
-       scannerModal.classList.add("hidden");
-       scannerModal.classList.remove("flex");
-    });
-  }
-}
-
-
-// ==========================================
-// RESIDENT CLAIM FLOW (DIRECT REGISTRATION VIA SCANNER)
-// ==========================================
-async function showResidentClaimPage(slug: string) {
-  const page = new ResidentClaimPage();
-  document.body.innerHTML = page.render();
-  
-  const client = SupabaseService.getClient();
-  if (!client) return showToast("Database error", "error");
-  
-  const titleEl = document.getElementById("claimSocietyTitle");
-  const towerSelect = document.getElementById("claimTowerSelect") as HTMLSelectElement;
-  const flatSelect = document.getElementById("claimFlatSelect") as HTMLSelectElement;
-  const submitBtn = document.getElementById("submitClaimBtn") as HTMLButtonElement;
-  
-  const { data: society, error: societyError } = await client.from("societies").select("*").eq("claim_token", slug).single();
-  
-  if (societyError || !society) {
-    document.body.innerHTML = `
-      <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center max-w-sm w-full">
-          <div class="text-5xl text-rose-500 mb-4"><i class="fa-solid fa-link-slash"></i></div>
-          <h2 class="text-xl font-black text-slate-800 mb-2">Link Expired</h2>
-          <p class="text-sm text-slate-500 font-medium leading-relaxed">This registration link is invalid or has been reset by the Admin for security. Please ask your society for a new QR code.</p>
-        </div>
-      </div>
-    `;
-    return;
-  }
-  
-  if (titleEl) titleEl.innerText = "Register for " + society.name;
-  
-  const { data: flats } = await client.from("flats").select("*").eq("society_id", society.id).order("flat_number");
-  const groupedFlats: {
-    [key: string]: any[] } = {};
-  
-  if (flats) {
-    flats.forEach((flat: any) => {
-      const parts = flat.flat_number.split("-");
-      const towerName = parts.length > 1 ? parts[0].trim() : "Ind";
-      if (!groupedFlats[towerName]) groupedFlats[towerName] = [];
-      groupedFlats[towerName].push(flat);
-    });
-    
-    let towerHtml = `<option value="">Select Your Tower</option>`;
-    for (const tower in groupedFlats) towerHtml += `<option value="${tower}">${tower}</option>`;
-    if (towerSelect) towerSelect.innerHTML = towerHtml;
-    
-    towerSelect.addEventListener("change", () => {
-      const selected = towerSelect.value;
-      if (selected && groupedFlats[selected]) {
-        flatSelect.disabled = false;
-        flatSelect.className = "w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-indigo-500 outline-none transition-all text-sm font-bold text-slate-900 cursor-pointer appearance-none";
-        let flatHtml = `<option value="">Select Your Flat</option>`;
-        groupedFlats[selected].forEach((flat: any) => {
-          const isClaimed = flat.resident_secret ? " (Already Registered)" : "";
-          const flatOnly = flat.flat_number.includes("-") ? flat.flat_number.split("-")[1] : flat.flat_number;
-          flatHtml += `<option value="${flat.id}" ${flat.resident_secret ? 'disabled' : ''}>${flatOnly}${isClaimed}</option>`;
-        });
-        flatSelect.innerHTML = flatHtml;
-      } else {
-        flatSelect.disabled = true;
-        flatSelect.className = "w-full px-4 py-3 rounded-xl border border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed outline-none text-sm font-bold appearance-none";
-        flatSelect.innerHTML = `<option value="">Select Tower 1st</option>`;
-      }
-    });
-  }
-  
-  const formContainer = submitBtn.parentElement;
-  if (formContainer) {
-    const declarationHtml = `
-      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left mb-6">
-        <h4 class="text-[11px] font-black text-amber-800 uppercase tracking-wider mb-2"><i class="fa-solid fa-triangle-exclamation"></i> Important Declaration</h4>
-        <p class="text-xs text-amber-700 font-medium leading-relaxed mb-2">By clicking submit, you confirm that you are the verified owner, tenant, or authorized resident of this flat.</p>
-        <p class="text-xs text-amber-700 font-medium leading-relaxed italic">Note: False registration attempts will be logged and reported to the Society Management.</p>
-      </div>
-    `;
-    submitBtn.insertAdjacentHTML('beforebegin', declarationHtml);
-  }
-  
-  if (submitBtn) {
-    submitBtn.addEventListener("click", async () => {
-      const flatId = flatSelect.value;
-      const residentName = (document.getElementById("residentName") as HTMLInputElement).value.trim();
-      const residentMobile = (document.getElementById("residentMobile") as HTMLInputElement).value.trim();
-      
-      if (!towerSelect.value || !flatId || !residentName || !residentMobile) {
-        return showToast("Please fill all details correctly!", "error");
-      }
-      
-      submitBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Processing...`;
-      submitBtn.disabled = true;
-      
-      // Double check security
-      const { data: flatData } = await client.from("flats").select("resident_secret").eq("id", flatId).single();
-      if (flatData && flatData.resident_secret) {
-        alert("This flat is already registered. If ownership or tenancy has changed, please contact your Society Secretary.");
-        submitBtn.innerHTML = `Complete Registration <i class="fa-solid fa-arrow-right"></i>`;
-        submitBtn.disabled = false;
-        return;
-      }
-      
-      // Create secure token and update DB
-      const randomSecret = `res-${Math.random().toString(36).substr(2, 12)}`;
-      const { error } = await client.from("flats").update({
-        resident_name: residentName,
-        resident_mobile: residentMobile,
-        resident_secret: randomSecret
-      }).eq("id", flatId);
-      
-      if (error) {
-        showToast("Database Error: " + error.message, "error");
-        submitBtn.innerHTML = `Complete Registration <i class="fa-solid fa-arrow-right"></i>`;
-        submitBtn.disabled = false;
-        return;
-      }
-      
-      // 🚀 Save directly to LocalStorage
-      localStorage.setItem("gateguard_resident_auth", randomSecret);
-      
-      const baseUrl = window.location.origin + window.location.pathname;
-      const magicLink = `${baseUrl}?resident=${randomSecret}`;
-      
-      document.body.innerHTML = `
-          <div class="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
-            <div class="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-white text-4xl shadow-lg shadow-emerald-200 mb-6 border-4 border-emerald-100">
-              <i class="fa-solid fa-check"></i>
-            </div>
-            <h2 class="text-2xl font-black text-slate-900 mb-2">Registration Successful!</h2>
-            <p class="text-slate-500 font-medium text-sm max-w-sm mb-6 leading-relaxed">Welcome, ${residentName}. Your flat has been securely registered.</p>
-            
-            <div class="bg-white p-6 rounded-3xl shadow-lg border border-slate-200 max-w-md w-full mb-6">
-              <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl mx-auto mb-3">
-                <i class="fa-solid fa-mobile-screen"></i>
-              </div>
-              <h3 class="font-bold text-slate-800 mb-2">Add to Home Screen</h3>
-              <p class="text-xs text-slate-500 mb-5 leading-relaxed">Install this dashboard as an App on your phone to get daily visitor alerts easily.</p>
-              
-              <div class="flex flex-col gap-3">
-                <button id="pwaInstallBtn" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold transition-all outline-none flex items-center justify-center gap-2 shadow-md">
-                  <i class="fa-solid fa-download"></i> Install App
-                </button>
-                <button onclick="window.location.href='${magicLink}'" class="w-full py-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-sm font-bold transition-all outline-none flex items-center justify-center gap-2">
-                  Open Dashboard <i class="fa-solid fa-arrow-right"></i>
-                </button>
-              </div>
-            </div>
-            
-            <button id="copyMagicLinkFinal" class="text-xs text-slate-400 font-bold hover:text-indigo-600 underline transition-colors outline-none">
-              Copy Manual Dashboard Link
-            </button>
-          </div>
-        `;
-      
-      document.getElementById("copyMagicLinkFinal")?.addEventListener("click", () => {
-        navigator.clipboard.writeText(magicLink);
-        showToast("Magic Link Copied!", "success");
-      });
-      
-      document.getElementById("pwaInstallBtn")?.addEventListener("click", () => {
-        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
-        const msg = isIOS ?
-          "To install on iPhone: Tap the Share icon at the bottom of Safari, then select 'Add to Home Screen'." :
-          "To install on Android: Tap the 3 dots (Menu) at the top right of Chrome, then select 'Add to Home screen'.";
-        alert(msg);
-      });
-    });
-  }
-}
-
-// ==========================================
-// RESIDENT DASHBOARD FLOW (WITH PBAC)
-// ==========================================
-async function showResidentDashboard(secretToken: string) {
-  const page = new ResidentDashboardPage();
-  document.body.innerHTML = page.render();
-
-  const client = SupabaseService.getClient();
-  if (!client) return showToast("Database error", "error");
-
-  try {
-    const { data: flat, error: flatError } = await client.from("flats")
-      .select("*, society:societies(name, id, plan_type)")
-      .eq("resident_secret", secretToken)
-      .single();
-
-    if (flatError || !flat) {
-      document.body.innerHTML = `<div class="p-10 text-center mt-20"><div class="text-5xl text-red-500 mb-4"><i class="fa-solid fa-link-slash"></i></div><h2 class="text-2xl font-black text-slate-800">Link Expired or Invalid</h2></div>`;
-      return;
-    }
-
-    (document.getElementById("resNameTitle") as HTMLElement).innerText = "Hi, " + (flat.resident_name || "Resident").split(" ")[0];
-    (document.getElementById("resFlatNumber") as HTMLElement).innerText = flat.flat_number;
-    (document.getElementById("resSocietyName") as HTMLElement).innerText = flat.society.name;
-
-    const generateBtn = document.getElementById("generatePassBtn") as HTMLButtonElement;
-    generateBtn.addEventListener("click", async () => {
-      if (!hasFeatureAccess(flat.society.plan_type, 'vvip_pass')) {
-        return showToast("VVIP feature locked! Tell Admin to upgrade plan.", "error");
-      }
-
-      const guestName = (document.getElementById("guestNameInput") as HTMLInputElement).value.trim();
-      if (!guestName) return showToast("Enter guest name", "error");
-
-      generateBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Creating...`;
-      generateBtn.disabled = true;
-
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-      const today = new Date().toISOString().split('T')[0];
-
-      const { error } = await client.from("guest_invites").insert({
-        society_id: flat.society.id,
-        flat_id: flat.id,
-        guest_name: guestName,
-        invite_code: code,
-        valid_date: today,
-        is_used: false
-      });
-
-      if (error) {
-        showToast("Error generating pass", "error");
-        generateBtn.innerHTML = `<i class="fa-solid fa-wand-magic-sparkles"></i> Create Pass`;
-        generateBtn.disabled = false;
-        return;
-      }
-
-      document.getElementById("generatedPassResult")?.classList.remove("hidden");
-      const displayEl = document.getElementById("vvipCodeDisplay");
-      if (displayEl) displayEl.innerText = code;
-      
-      generateBtn.innerHTML = `<i class="fa-solid fa-check"></i> Pass Created`;
-
-      document.getElementById("sharePassBtn")?.addEventListener("click", () => {
-        const text = `Hello ${guestName}! Here is your VVIP Gate Pass for ${flat.society.name}.\n\nFlat: ${flat.flat_number}\nEntry Code: *${code}*\n\nShow this code to the guard at the main gate for quick entry. Valid only for today.`;
-        window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-      });
-    });
-
-    const loadVisitors = async () => {
-      const { data: visitors } = await client.from("visitors")
-        .select("*")
-        .eq("flat_id", flat.id)
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      const container = document.getElementById("residentVisitorsContainer");
-      if (!container) return;
-
-      if (!visitors || visitors.length === 0) {
-        container.innerHTML = `<div class="text-center py-6 text-slate-400 text-sm font-medium bg-white rounded-2xl border border-slate-100">No visitors recently.</div>`;
-        return;
-      }
-
-      let html = "";
-      visitors.forEach(v => {
-        const dateObj = new Date(v.created_at);
-        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        const dateStr = dateObj.toLocaleDateString();
-        
-        let icon = "fa-user";
-        if (v.purpose === "Delivery") icon = "fa-box";
-        if (v.purpose === "Cab") icon = "fa-taxi";
-        
-        html += `
-          <div class="bg-white p-4 rounded-2xl border border-slate-100 flex items-center justify-between shadow-sm">
-            <div class="flex items-center gap-3">
-              <div class="w-10 h-10 bg-slate-50 text-slate-500 rounded-xl flex items-center justify-center border border-slate-200 shrink-0">
-                <i class="fa-solid ${icon}"></i>
-              </div>
-              <div>
-                <h4 class="font-bold text-sm text-slate-900">${v.name}</h4>
-                <p class="text-[11px] text-slate-500 font-medium uppercase tracking-wider">${v.purpose} • ${timeStr}</p>
-              </div>
-            </div>
-            <div class="text-right">
-              <div class="text-[10px] font-bold text-slate-400">${dateStr}</div>
-            </div>
-          </div>
-        `;
-      });
-      container.innerHTML = html;
-    };
-    
-    loadVisitors();
-
-  } catch (err: any) {
-    showToast("Error loading dashboard", "error");
-  }
-}
-
-// ==========================================
 // VISITOR QR ENTRY FLOW (SELF-SERVICE)
 // ==========================================
 async function showVisitorEntryPage(slug: string) {
@@ -1538,7 +929,7 @@ async function showVisitorEntryPage(slug: string) {
   const towerSelect = document.getElementById("entryTowerSelect") as HTMLSelectElement;
   const flatSelect = document.getElementById("entryFlatSelect") as HTMLSelectElement;
   const submitBtn = document.getElementById("submitEntryBtn") as HTMLButtonElement;
-
+  
   try {
     const { data: society, error: societyError } = await client.from("societies").select("*").eq("qr_slug", slug).single();
     if (societyError || !society) {
@@ -1547,7 +938,7 @@ async function showVisitorEntryPage(slug: string) {
     }
     
     if (titleEl) titleEl.innerText = society.name;
-
+    
     const { data: flats } = await client.from("flats").select("*").eq("society_id", society.id).order("flat_number");
     const groupedFlats: { [key: string]: any[] } = {};
     
@@ -1558,11 +949,11 @@ async function showVisitorEntryPage(slug: string) {
         if (!groupedFlats[towerName]) groupedFlats[towerName] = [];
         groupedFlats[towerName].push(flat);
       });
-
+      
       let towerHtml = `<option value="">Select Tower</option>`;
       for (const tower in groupedFlats) towerHtml += `<option value="${tower}">${tower}</option>`;
       if (towerSelect) towerSelect.innerHTML = towerHtml;
-
+      
       towerSelect.addEventListener("change", () => {
         const selected = towerSelect.value;
         if (selected && groupedFlats[selected]) {
@@ -1608,7 +999,7 @@ async function showVisitorEntryPage(slug: string) {
           purpose: purpose,
           vehicle_number: vehicle
         });
-
+        
         if (error) {
           showToast(error.message, "error");
           submitBtn.innerHTML = `Submit Entry Request <i class="fa-solid fa-arrow-right"></i>`;
@@ -1660,24 +1051,23 @@ async function showStaffAttendancePage(societyId: string) {
   if (dateInput) dateInput.value = today;
 
   let currentData: any[] = [];
-  
   const { data: soc } = await client.from("societies").select("plan_type").eq("id", societyId).single();
   const planType = soc?.plan_type || 'Starter';
-
+  
   const loadAttendance = async (dateStr: string) => {
     if (!container) return;
     container.innerHTML = `<div class="text-center py-12 text-slate-400"><i class="fa-solid fa-circle-notch fa-spin text-2xl mb-2"></i><br>Loading...</div>`;
-
+    
     try {
       const { data, error } = await client.from("staff_attendance")
         .select(`*, staff (name, role, mobile)`)
         .eq("society_id", societyId)
         .eq("date", dateStr)
         .order("time_in", { ascending: false });
-
+        
       if (error) throw new Error(error.message);
       currentData = data || [];
-
+      
       if (currentData.length === 0) {
         container.innerHTML = `<div class="text-center py-16"><div class="text-4xl mb-3 opacity-30 text-slate-400"><i class="fa-solid fa-clipboard-list"></i></div><h3 class="text-sm font-bold text-slate-500">No entries recorded for this date.</h3></div>`;
         return;
@@ -1763,47 +1153,24 @@ async function showStaffAttendancePage(societyId: string) {
       const csv = [headers.join(","), ...rows].join("\n");
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement("a");
+      
       link.href = URL.createObjectURL(blob);
       link.download = `GateGuard_Staff_Attendance_${dateInput.value}.csv`;
       document.body.appendChild(link); link.click(); document.body.removeChild(link);
       showToast("CSV Downloaded Successfully!", "success");
     });
   });
-
+  
   loadAttendance(today);
 }
 
 // ==========================================
-// UNIFIED ROUTER (WITH AUTO-LOGIN)
+// UNIFIED ROUTER (CLEANED UP)
 // ==========================================
 function initApp() {
   const urlParams = new URLSearchParams(window.location.search);
   
-  // 1. Guard Tablet Route
-  const guardSlug = urlParams.get("guard");
-  if (guardSlug) { showGuardConsole(guardSlug); return; }
-
-  // 2. 🚀 LOCALSTORAGE AUTO-LOGIN CHECK
-  // Agar browser memory mein token hai, toh direct Dashboard khol do
-  const savedResidentToken = localStorage.getItem("gateguard_resident_auth");
-  if (savedResidentToken) {
-    showResidentDashboard(savedResidentToken);
-    return;
-  }
-  
-  // 3. Resident Registration Route (Scanner se aane wala link)
-  const claimSlug = urlParams.get("claim");
-  if (claimSlug) { showResidentClaimPage(claimSlug); return; }
-
-  // 4. Fallback Manual Link Route
-  const residentSecret = urlParams.get("resident");
-  if (residentSecret) { 
-    localStorage.setItem("gateguard_resident_auth", residentSecret);
-    showResidentDashboard(residentSecret); 
-    return; 
-  }
-
-  // 5. Normal Entry and Legal Pages
+  // Normal Entry and Legal Pages
   const entrySlug = urlParams.get("entry");
   if (entrySlug) { showVisitorEntryPage(entrySlug); return; }
   
@@ -1812,7 +1179,7 @@ function initApp() {
   if (pageType === "terms") { showTermsPage(); return; }
   if (pageType === "refund") { showRefundPolicyPage(); return; }
   
-  // Default to Main Landing Page
+  // Default to Main Landing Page (Admin App)
   showHomePage();
 }
 
