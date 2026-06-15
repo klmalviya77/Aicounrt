@@ -650,7 +650,7 @@ async function loadStaffList(societyId: string) {
 }
 
 // ==========================================
-// MANAGE RESIDENTS FLOW
+// MANAGE RESIDENTS FLOW (ADMIN SIDE)
 // ==========================================
 async function showManageResidentsPage(societyId: string) {
   const page = new ManageResidentsPage();
@@ -662,72 +662,106 @@ async function showManageResidentsPage(societyId: string) {
   if (!container) return;
 
   try {
+    // 1. Fetch Society & Token details
+    let { data: society } = await client.from("societies").select("*").eq("id", societyId).single();
+    
+    // Agar token nahi hai, toh pehli baar bana do
+    if (!society.claim_token) {
+      const newToken = "claim-" + Math.random().toString(36).substring(2, 12);
+      await client.from("societies").update({ claim_token: newToken }).eq("id", societyId);
+      society.claim_token = newToken;
+    }
+
+    const baseUrl = window.location.origin + window.location.pathname;
+    const claimLink = `${baseUrl}?claim=${society.claim_token}`;
+    const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(claimLink)}`;
+
     const { data: flats, error } = await client.from("flats").select("*").eq("society_id", societyId).order("flat_number", { ascending: true });
     if (error) throw new Error(error.message);
 
-    if (!flats || flats.length === 0) {
-      container.innerHTML = `<div class="text-center py-10 text-slate-400 font-medium">No flats added yet. Please add flats first.</div>`;
-      return;
-    }
-
+    // Render Admin UI (QR Section + Table)
     let html = `
-      <div class="overflow-x-auto">
-        <table class="w-full text-left border-collapse whitespace-nowrap">
-          <thead class="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500 font-extrabold">
-            <tr>
-              <th class="p-4">Flat No.</th>
-              <th class="p-4">Owner Mobile</th>
-              <th class="p-4">Security Status</th>
-              <th class="p-4 text-right">Actions</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-slate-100">
+      <div class="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 mb-8 flex flex-col md:flex-row items-center gap-6 shadow-sm">
+        <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-200 shrink-0">
+          <img src="${qrImageUrl}" crossorigin="anonymous" class="w-28 h-28 object-contain rounded-xl">
+        </div>
+        <div class="flex-1 text-center md:text-left">
+          <h3 class="text-xl font-black text-indigo-900 mb-1">Resident Registration QR</h3>
+          <p class="text-xs text-indigo-700 font-medium mb-4 leading-relaxed max-w-lg">
+            Share this QR code in your Society WhatsApp group. Residents can scan this to self-register their flats.
+          </p>
+          <div class="flex flex-wrap items-center justify-center md:justify-start gap-3">
+            <button onclick="window.open('https://wa.me/?text=${encodeURIComponent('Hello Residents, please use this link to register your flat in GateGuard: ' + claimLink)}', '_blank')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-md transition-all outline-none">
+              <i class="fa-brands fa-whatsapp"></i> Share Link
+            </button>
+            <button onclick="rotateClaimToken()" class="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg shadow-md transition-all outline-none">
+              <i class="fa-solid fa-rotate"></i> Change QR Link
+            </button>
+          </div>
+        </div>
+      </div>
     `;
 
-    flats.forEach((flat: any) => {
-      const isClaimed = flat.resident_secret ? true : false;
-      const deviceLocked = flat.trusted_device_token 
-        ? `<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 w-fit"><i class="fa-solid fa-lock"></i> Device Bound</span>` 
-        : `<span class="bg-amber-100 text-amber-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 w-fit"><i class="fa-solid fa-unlock"></i> No Device</span>`;
-      
-      const claimBadge = isClaimed 
-        ? `<span class="bg-blue-100 text-blue-700 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 w-fit"><i class="fa-solid fa-circle-check"></i> Claimed</span>` 
-        : `<span class="bg-slate-100 text-slate-500 text-[10px] font-bold px-2 py-1 rounded flex items-center gap-1 w-fit">Unclaimed</span>`;
-
+    if (!flats || flats.length === 0) {
+      html += `<div class="text-center py-10 text-slate-400 font-medium">No flats added yet. Please add flats first.</div>`;
+    } else {
       html += `
-        <tr class="hover:bg-slate-50 transition-colors">
-          <td class="p-4 font-black text-slate-900 text-base">${flat.flat_number}</td>
-          <td class="p-4">
-            <div class="relative">
-              <span class="absolute left-3 top-2 text-slate-400 text-xs">+91</span>
-              <input type="tel" id="mob_${flat.id}" value="${flat.resident_mobile || ''}" placeholder="10-digit number" class="border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 outline-none focus:border-indigo-500 w-40 text-xs font-medium text-slate-700 bg-white">
-            </div>
-          </td>
-          <td class="p-4">
-            <div class="flex flex-col gap-1.5">${claimBadge}${deviceLocked}</div>
-          </td>
-          <td class="p-4 text-right space-x-2">
-            <button onclick="updateResidentMobile('${flat.id}')" class="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 font-bold text-[11px] rounded-lg transition-all outline-none border border-indigo-100"><i class="fa-solid fa-floppy-disk"></i> Save</button>
-            ${flat.trusted_device_token ? `<button onclick="resetDeviceToken('${flat.id}')" class="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-[11px] rounded-lg transition-all outline-none border border-rose-100"><i class="fa-solid fa-rotate-left"></i> Reset Lock</button>` : ''}
-          </td>
-        </tr>
+        <div class="overflow-x-auto">
+          <table class="w-full text-left border-collapse whitespace-nowrap">
+            <thead class="bg-slate-50 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-500 font-extrabold">
+              <tr>
+                <th class="p-4">Flat No.</th>
+                <th class="p-4">Resident Info</th>
+                <th class="p-4">Status</th>
+                <th class="p-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-100">
       `;
-    });
-    html += `</tbody></table></div>`;
+
+      flats.forEach((flat: any) => {
+        const isClaimed = flat.resident_secret ? true : false;
+        const claimBadge = isClaimed 
+          ? `<span class="bg-emerald-100 text-emerald-700 text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center gap-1 w-fit"><i class="fa-solid fa-circle-check"></i> Registered</span>` 
+          : `<span class="bg-slate-100 text-slate-500 text-[10px] font-bold px-2.5 py-1 rounded-md flex items-center gap-1 w-fit">Unclaimed</span>`;
+
+        const residentInfo = isClaimed 
+          ? `<div class="font-bold text-sm text-slate-800">${flat.resident_name}</div><div class="text-[11px] text-slate-500 font-medium">+91 ${flat.resident_mobile}</div>`
+          : `<div class="text-xs text-slate-400 italic">Not registered yet</div>`;
+
+        html += `
+          <tr class="hover:bg-slate-50 transition-colors">
+            <td class="p-4 font-black text-slate-900 text-base">${flat.flat_number}</td>
+            <td class="p-4">${residentInfo}</td>
+            <td class="p-4">${claimBadge}</td>
+            <td class="p-4 text-right">
+              ${isClaimed ? `<button onclick="resetFlatRegistration('${flat.id}')" class="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 font-bold text-[11px] rounded-lg transition-all outline-none border border-rose-100"><i class="fa-solid fa-trash-can"></i> Reset Flat</button>` : '<span class="text-xs text-slate-300">-</span>'}
+            </td>
+          </tr>
+        `;
+      });
+      html += `</tbody></table></div>`;
+    }
+    
     container.innerHTML = html;
 
-    (window as any).updateResidentMobile = async (flatId: string) => {
-      const mobile = (document.getElementById(`mob_${flatId}`) as HTMLInputElement).value.trim();
-      if (!mobile) return showToast("Enter a valid mobile number.", "error");
-      const { error } = await client.from("flats").update({ resident_mobile: mobile }).eq("id", flatId);
-      if (error) showToast(error.message, "error"); else showToast("Mobile saved. Resident can claim flat.", "success");
+    // Reset Flat Logic
+    (window as any).resetFlatRegistration = async (flatId: string) => {
+      if (!confirm("Are you sure? This will remove the resident's access and they will have to register again.")) return;
+      const { error } = await client.from("flats").update({
+        resident_name: null, resident_mobile: null, resident_secret: null, trusted_device_token: null
+      }).eq("id", flatId);
+      if (error) showToast(error.message, "error"); 
+      else { showToast("Flat Registration Reset!", "success"); showManageResidentsPage(societyId); }
     };
 
-    (window as any).resetDeviceToken = async (flatId: string) => {
-      if (!confirm("Reset device lock? Resident will need OTP again.")) return;
-      const { error } = await client.from("flats").update({ trusted_device_token: null }).eq("id", flatId);
+    // Rotate/Regenerate QR Logic
+    (window as any).rotateClaimToken = async () => {
+      if (!confirm("Generate a new QR Code? The old QR shared in WhatsApp will immediately stop working for security.")) return;
+      const newToken = "claim-" + Math.random().toString(36).substring(2, 12);
+      const { error } = await client.from("societies").update({ claim_token: newToken }).eq("id", societyId);
       if (error) showToast(error.message, "error"); 
-      else { showToast("Device Lock Reset!", "success"); showManageResidentsPage(societyId); }
+      else { showToast("New Secure QR Generated!", "success"); showManageResidentsPage(societyId); }
     };
 
   } catch (err: any) { container.innerHTML = `<div class="text-red-500 p-6 text-sm">${err.message}</div>`; }
@@ -1201,7 +1235,7 @@ async function showGuardConsole(slug: string) {
 
 
 // ==========================================
-// RESIDENT CLAIM FLOW (WITH PBAC)
+// RESIDENT CLAIM FLOW (DIRECT REGISTRATION VIA SCANNER)
 // ==========================================
 async function showResidentClaimPage(slug: string) {
   const page = new ResidentClaimPage();
@@ -1215,31 +1249,26 @@ async function showResidentClaimPage(slug: string) {
   const flatSelect = document.getElementById("claimFlatSelect") as HTMLSelectElement;
   const submitBtn = document.getElementById("submitClaimBtn") as HTMLButtonElement;
   
-  const { data: society, error: societyError } = await client.from("societies").select("*").eq("qr_slug", slug).single();
-  if (societyError || !society) {
-    if (titleEl) titleEl.innerHTML = `<span class="text-red-400"><i class="fa-solid fa-triangle-exclamation"></i> Invalid Link</span>`;
-    return;
-  }
+  const { data: society, error: societyError } = await client.from("societies").select("*").eq("claim_token", slug).single();
   
-  if (!hasFeatureAccess(society.plan_type, 'resident_management')) {
+  if (societyError || !society) {
     document.body.innerHTML = `
       <div class="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-        <div class="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 text-center max-w-sm w-full">
-          <div class="text-5xl text-rose-500 mb-4"><i class="fa-solid fa-lock"></i></div>
-          <h2 class="text-xl font-black text-slate-800 mb-2">Feature Locked</h2>
-          <p class="text-sm text-slate-500 font-medium leading-relaxed">Your society is currently on the <b>${society.plan_type}</b> plan which does not include the Resident App module.</p>
+        <div class="bg-white p-8 rounded-3xl shadow-sm border border-slate-200 text-center max-w-sm w-full">
+          <div class="text-5xl text-rose-500 mb-4"><i class="fa-solid fa-link-slash"></i></div>
+          <h2 class="text-xl font-black text-slate-800 mb-2">Link Expired</h2>
+          <p class="text-sm text-slate-500 font-medium leading-relaxed">This registration link is invalid or has been reset by the Admin for security. Please ask your society for a new QR code.</p>
         </div>
       </div>
     `;
     return;
   }
   
-  if (titleEl) titleEl.innerText = society.name;
+  if (titleEl) titleEl.innerText = "Register for " + society.name;
   
   const { data: flats } = await client.from("flats").select("*").eq("society_id", society.id).order("flat_number");
   const groupedFlats: {
-    [key: string]: any[]
-  } = {};
+    [key: string]: any[] } = {};
   
   if (flats) {
     flats.forEach((flat: any) => {
@@ -1249,7 +1278,7 @@ async function showResidentClaimPage(slug: string) {
       groupedFlats[towerName].push(flat);
     });
     
-    let towerHtml = `<option value="">Select Tower</option>`;
+    let towerHtml = `<option value="">Select Your Tower</option>`;
     for (const tower in groupedFlats) towerHtml += `<option value="${tower}">${tower}</option>`;
     if (towerSelect) towerSelect.innerHTML = towerHtml;
     
@@ -1258,9 +1287,9 @@ async function showResidentClaimPage(slug: string) {
       if (selected && groupedFlats[selected]) {
         flatSelect.disabled = false;
         flatSelect.className = "w-full px-4 py-3 rounded-xl border border-slate-200 bg-white focus:border-indigo-500 outline-none transition-all text-sm font-bold text-slate-900 cursor-pointer appearance-none";
-        let flatHtml = `<option value="">Select Flat</option>`;
+        let flatHtml = `<option value="">Select Your Flat</option>`;
         groupedFlats[selected].forEach((flat: any) => {
-          const isClaimed = flat.resident_secret ? " (Claimed)" : "";
+          const isClaimed = flat.resident_secret ? " (Already Registered)" : "";
           const flatOnly = flat.flat_number.includes("-") ? flat.flat_number.split("-")[1] : flat.flat_number;
           flatHtml += `<option value="${flat.id}" ${flat.resident_secret ? 'disabled' : ''}>${flatOnly}${isClaimed}</option>`;
         });
@@ -1273,6 +1302,18 @@ async function showResidentClaimPage(slug: string) {
     });
   }
   
+  const formContainer = submitBtn.parentElement;
+  if (formContainer) {
+    const declarationHtml = `
+      <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 text-left mb-6">
+        <h4 class="text-[11px] font-black text-amber-800 uppercase tracking-wider mb-2"><i class="fa-solid fa-triangle-exclamation"></i> Important Declaration</h4>
+        <p class="text-xs text-amber-700 font-medium leading-relaxed mb-2">By clicking submit, you confirm that you are the verified owner, tenant, or authorized resident of this flat.</p>
+        <p class="text-xs text-amber-700 font-medium leading-relaxed italic">Note: False registration attempts will be logged and reported to the Society Management.</p>
+      </div>
+    `;
+    submitBtn.insertAdjacentHTML('beforebegin', declarationHtml);
+  }
+  
   if (submitBtn) {
     submitBtn.addEventListener("click", async () => {
       const flatId = flatSelect.value;
@@ -1280,120 +1321,88 @@ async function showResidentClaimPage(slug: string) {
       const residentMobile = (document.getElementById("residentMobile") as HTMLInputElement).value.trim();
       
       if (!towerSelect.value || !flatId || !residentName || !residentMobile) {
-        return showToast("Please fill all details!", "error");
+        return showToast("Please fill all details correctly!", "error");
       }
       
-      submitBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Checking Database...`;
+      submitBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Processing...`;
       submitBtn.disabled = true;
       
-      const { data: flatData } = await client.from("flats").select("resident_mobile").eq("id", flatId).single();
-      
-      if (flatData && flatData.resident_mobile && flatData.resident_mobile !== residentMobile) {
-        showToast("Security Alert: Mobile number mismatch! Contact Admin.", "error");
-        submitBtn.innerHTML = `Verify & Save Details <i class="fa-solid fa-arrow-right"></i>`;
+      // Double check security
+      const { data: flatData } = await client.from("flats").select("resident_secret").eq("id", flatId).single();
+      if (flatData && flatData.resident_secret) {
+        alert("This flat is already registered. If ownership or tenancy has changed, please contact your Society Secretary.");
+        submitBtn.innerHTML = `Complete Registration <i class="fa-solid fa-arrow-right"></i>`;
         submitBtn.disabled = false;
         return;
       }
       
-      // 🚀 UPDATED LOGIC: SUPABASE EDGE FUNCTION KE THROUGH OTP SEND KARNA
-      const otp = Math.floor(1000 + Math.random() * 9000).toString();
+      // Create secure token and update DB
+      const randomSecret = `res-${Math.random().toString(36).substr(2, 12)}`;
+      const { error } = await client.from("flats").update({
+        resident_name: residentName,
+        resident_mobile: residentMobile,
+        resident_secret: randomSecret
+      }).eq("id", flatId);
       
-      try {
-        // Naya tareeka: Supabase ke edge function ko call lagao
-        const { data, error } = await client.functions.invoke('send-otp', {
-          body: { mobile: residentMobile, otp: otp }
-        });
-
-        if (error) {
-           throw new Error("Edge Function Error");
-        }
-        
-        console.log("OTP Sent Successfully via Supabase!");
-      } catch (err) { 
-        console.error("Fast2SMS/Supabase Error:", err);
-        // Agar net slow ho ya SMS API fail ho, toh backup mein screen pe OTP dikha dega
-        showToast(`Simulated OTP: ${otp}`, "success"); 
+      if (error) {
+        showToast("Database Error: " + error.message, "error");
+        submitBtn.innerHTML = `Complete Registration <i class="fa-solid fa-arrow-right"></i>`;
+        submitBtn.disabled = false;
+        return;
       }
       
-      const otpModal = document.createElement("div");
-      otpModal.className = "fixed inset-0 bg-slate-900/90 z-[9999] flex items-center justify-center p-4 backdrop-blur-sm transition-all";
-      otpModal.innerHTML = `
-        <div class="bg-white p-8 rounded-3xl max-w-sm w-full text-center shadow-2xl relative">
-          <button id="cancelOtpBtn" class="absolute top-4 right-4 text-slate-400 hover:text-slate-800 font-bold text-xl outline-none">&times;</button>
-          <div class="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-2xl mx-auto mb-4 border border-indigo-100"><i class="fa-solid fa-message"></i></div>
-          <h3 class="text-xl font-black text-slate-900 mb-1">Verify Mobile</h3>
-          <p class="text-xs font-medium text-slate-500 mb-6 leading-relaxed">Enter the 4-digit OTP sent to <br><b class="text-slate-800">+91 ${residentMobile}</b></p>
-          <input id="claimOtpInput" type="text" maxlength="4" placeholder="••••" class="w-full text-center tracking-[0.5em] font-black text-3xl px-4 py-4 rounded-xl border-2 border-slate-200 mb-6 outline-none focus:border-indigo-500 focus:bg-indigo-50 transition-all text-slate-800">
-          <button id="verifyClaimOtpBtn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-3.5 rounded-xl font-bold shadow-lg transition-all outline-none">
-            Verify & Claim Flat
-          </button>
-        </div>
-      `;
-      document.body.appendChild(otpModal);
+      // 🚀 Save directly to LocalStorage
+      localStorage.setItem("gateguard_resident_auth", randomSecret);
       
-      document.getElementById("cancelOtpBtn")?.addEventListener("click", () => {
-        otpModal.remove();
-        submitBtn.innerHTML = `Verify & Save Details <i class="fa-solid fa-arrow-right"></i>`;
-        submitBtn.disabled = false;
-      });
+      const baseUrl = window.location.origin + window.location.pathname;
+      const magicLink = `${baseUrl}?resident=${randomSecret}`;
       
-      document.getElementById("verifyClaimOtpBtn")?.addEventListener("click", async () => {
-        const enteredOtp = (document.getElementById("claimOtpInput") as HTMLInputElement).value;
-        if (enteredOtp !== otp && enteredOtp !== "0000") {
-          return showToast("Incorrect OTP!", "error");
-        }
-        
-        otpModal.remove();
-        submitBtn.innerHTML = `<i class="fa-solid fa-circle-notch fa-spin"></i> Setting up App...`;
-        
-        const randomSecret = `res-${Math.random().toString(36).substr(2, 12)}`;
-        
-        const { error } = await client.from("flats").update({
-          resident_name: residentName,
-          resident_mobile: residentMobile,
-          resident_secret: randomSecret
-        }).eq("id", flatId);
-        
-        if (error) {
-          showToast("Database Error: " + error.message, "error");
-          submitBtn.innerHTML = `Verify & Save Details`;
-          submitBtn.disabled = false;
-          return;
-        }
-        
-        const baseUrl = window.location.origin + window.location.pathname;
-        const magicLink = `${baseUrl}?resident=${randomSecret}`;
-        
-        document.body.innerHTML = `
-            <div class="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
-              <div class="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-white text-4xl shadow-lg shadow-emerald-200 mb-6 border-4 border-emerald-100">
-                <i class="fa-solid fa-check"></i>
+      document.body.innerHTML = `
+          <div class="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center font-sans">
+            <div class="w-20 h-20 bg-emerald-500 rounded-full flex items-center justify-center text-white text-4xl shadow-lg shadow-emerald-200 mb-6 border-4 border-emerald-100">
+              <i class="fa-solid fa-check"></i>
+            </div>
+            <h2 class="text-2xl font-black text-slate-900 mb-2">Registration Successful!</h2>
+            <p class="text-slate-500 font-medium text-sm max-w-sm mb-6 leading-relaxed">Welcome, ${residentName}. Your flat has been securely registered.</p>
+            
+            <div class="bg-white p-6 rounded-3xl shadow-lg border border-slate-200 max-w-md w-full mb-6">
+              <div class="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center text-xl mx-auto mb-3">
+                <i class="fa-solid fa-mobile-screen"></i>
               </div>
-              <h2 class="text-2xl font-black text-slate-900 mb-2">Registration Successful!</h2>
-              <p class="text-slate-500 font-medium text-sm max-w-sm mb-8 leading-relaxed">Welcome, ${residentName}. Your device is securely connected to your flat. Save your magic link to access your dashboard.</p>
+              <h3 class="font-bold text-slate-800 mb-2">Add to Home Screen</h3>
+              <p class="text-xs text-slate-500 mb-5 leading-relaxed">Install this dashboard as an App on your phone to get daily visitor alerts easily.</p>
               
-              <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 max-w-md w-full">
-                <div class="text-[10px] text-slate-400 font-bold uppercase tracking-widest mb-3">Your Resident Dashboard</div>
-                
-                <button id="copyMagicLinkFinal" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold mb-3 transition-all outline-none flex items-center justify-center gap-2">
-                  <i class="fa-solid fa-copy"></i> Copy My Magic Link
+              <div class="flex flex-col gap-3">
+                <button id="pwaInstallBtn" class="w-full py-3.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-sm font-bold transition-all outline-none flex items-center justify-center gap-2 shadow-md">
+                  <i class="fa-solid fa-download"></i> Install App
                 </button>
                 <button onclick="window.location.href='${magicLink}'" class="w-full py-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-sm font-bold transition-all outline-none flex items-center justify-center gap-2">
-                  Go To Dashboard <i class="fa-solid fa-arrow-right"></i>
+                  Open Dashboard <i class="fa-solid fa-arrow-right"></i>
                 </button>
               </div>
             </div>
-          `;
-        
-        document.getElementById("copyMagicLinkFinal")?.addEventListener("click", () => {
-          navigator.clipboard.writeText(magicLink);
-          showToast("Magic Link Copied! Save it securely.", "success");
-        });
+            
+            <button id="copyMagicLinkFinal" class="text-xs text-slate-400 font-bold hover:text-indigo-600 underline transition-colors outline-none">
+              Copy Manual Dashboard Link
+            </button>
+          </div>
+        `;
+      
+      document.getElementById("copyMagicLinkFinal")?.addEventListener("click", () => {
+        navigator.clipboard.writeText(magicLink);
+        showToast("Magic Link Copied!", "success");
+      });
+      
+      document.getElementById("pwaInstallBtn")?.addEventListener("click", () => {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !(window as any).MSStream;
+        const msg = isIOS ?
+          "To install on iPhone: Tap the Share icon at the bottom of Safari, then select 'Add to Home Screen'." :
+          "To install on Android: Tap the 3 dots (Menu) at the top right of Chrome, then select 'Add to Home screen'.";
+        alert(msg);
       });
     });
   }
 }
-
 
 // ==========================================
 // RESIDENT DASHBOARD FLOW (WITH PBAC)
@@ -1765,20 +1774,36 @@ async function showStaffAttendancePage(societyId: string) {
 }
 
 // ==========================================
-// UNIFIED ROUTER
+// UNIFIED ROUTER (WITH AUTO-LOGIN)
 // ==========================================
 function initApp() {
   const urlParams = new URLSearchParams(window.location.search);
   
+  // 1. Guard Tablet Route
   const guardSlug = urlParams.get("guard");
   if (guardSlug) { showGuardConsole(guardSlug); return; }
+
+  // 2. 🚀 LOCALSTORAGE AUTO-LOGIN CHECK
+  // Agar browser memory mein token hai, toh direct Dashboard khol do
+  const savedResidentToken = localStorage.getItem("gateguard_resident_auth");
+  if (savedResidentToken) {
+    showResidentDashboard(savedResidentToken);
+    return;
+  }
   
+  // 3. Resident Registration Route (Scanner se aane wala link)
   const claimSlug = urlParams.get("claim");
   if (claimSlug) { showResidentClaimPage(claimSlug); return; }
 
+  // 4. Fallback Manual Link Route
   const residentSecret = urlParams.get("resident");
-  if (residentSecret) { showResidentDashboard(residentSecret); return; }
+  if (residentSecret) { 
+    localStorage.setItem("gateguard_resident_auth", residentSecret);
+    showResidentDashboard(residentSecret); 
+    return; 
+  }
 
+  // 5. Normal Entry and Legal Pages
   const entrySlug = urlParams.get("entry");
   if (entrySlug) { showVisitorEntryPage(entrySlug); return; }
   
@@ -1787,7 +1812,9 @@ function initApp() {
   if (pageType === "terms") { showTermsPage(); return; }
   if (pageType === "refund") { showRefundPolicyPage(); return; }
   
+  // Default to Main Landing Page
   showHomePage();
 }
 
+// 🚀 START APPLICATION
 initApp();
