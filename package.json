@@ -6,7 +6,7 @@
   "scripts": {
     "dev:ts": "tsc --watch",
     "dev:css": "npx tailwindcss -i ./input.css -o ./style.css --watch",
-    "build": "tsc && npx tailwindcss -i ./style.css -o ./main.css --minify"
+    "build": "npx tailwindcss -i ./style.css -o ./main.css --minify"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0"
